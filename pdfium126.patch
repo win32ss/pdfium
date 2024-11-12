@@ -1,0 +1,47 @@
+diff --git a/core/fxge/cfx_font.cpp b/core/fxge/cfx_font.cpp
+index 6c7b25327..64f69c3a8 100644
+--- a/core/fxge/cfx_font.cpp
++++ b/core/fxge/cfx_font.cpp
+@@ -237,11 +237,28 @@ void CFX_Font::LoadSubst(const ByteString& face_name,
+   m_bVertical = bVertical;
+   m_ObjectTag = 0;
+   m_pSubstFont = std::make_unique<CFX_SubstFont>();
++  // Some fonts may not be available to use on some Windows 7 systems due to failures
++  // in gdi32!GetFontData (win32k!NtGdiGetFontData) even when CreateFontA is successful.
++  // When this happens, other fonts are usually available, and some systems that consistently
++  // fail with one font are successful with at least one of the two others.
++  // As a result, if the first fallback font fails (usually Arial), attempt to load Arial Unicode
++  // MS, and if that also fails, try Tahoma.
+   m_Face = CFX_GEModule::Get()->GetFontMgr()->GetBuiltinMapper()->FindSubstFont(
+       face_name, bTrueType, flags, weight, italic_angle, code_page,
+       m_pSubstFont.get());
+   if (m_Face) {
+     m_FontData = m_Face->GetData();
++  } else {
++    m_Face = CFX_GEModule::Get()->GetFontMgr()->GetBuiltinMapper()->FindSubstFont(
++      "Arial Unicode MS", bTrueType, flags, weight, italic_angle, code_page,
++      m_pSubstFont.get());
++  }
++  if (m_Face) {
++    m_FontData = m_Face->GetData();
++  } else {
++    m_Face = CFX_GEModule::Get()->GetFontMgr()->GetBuiltinMapper()->FindSubstFont(
++      "Tahoma", bTrueType, flags, weight, italic_angle, code_page,
++      m_pSubstFont.get());
+   }
+ }
+ 
+diff --git a/core/fxge/cfx_glyphcache.cpp b/core/fxge/cfx_glyphcache.cpp
+index cda15e3cc..2f7c8e60e 100644
+--- a/core/fxge/cfx_glyphcache.cpp
++++ b/core/fxge/cfx_glyphcache.cpp
+@@ -245,6 +245,9 @@ void CFX_GlyphCache::InitializeGlobals() {
+   CHECK(!g_fontmgr);
+ #if BUILDFLAG(IS_WIN)
+   g_fontmgr = SkFontMgr_New_DirectWrite().release();
++  if (!g_fontmgr) {
++    g_fontmgr = SkFontMgr_New_Custom_Empty().release();
++  }
+ #elif BUILDFLAG(IS_APPLE)
+   g_fontmgr = SkFontMgr_New_CoreText(nullptr).release();
+ #else
